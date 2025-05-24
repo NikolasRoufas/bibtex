@@ -353,6 +353,25 @@
                         <input type="checkbox" id="sortFields" checked>
                         <label for="sortFields">Sort fields within entries</label>
                     </div>
+                    <div class="setting-group" style="margin-left: 1rem; margin-top: 0.5rem;">
+                        <label style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 0.5rem; display: block;">Sort entries by:</label>
+                        <div class="setting-item" style="margin-bottom: 0.25rem;">
+                            <input type="radio" id="sortByCitation" name="sortBy" value="citation" checked style="margin-right: 0.5rem;">
+                            <label for="sortByCitation" style="font-size: 0.85rem;">Citation key (alphabetical)</label>
+                        </div>
+                        <div class="setting-item" style="margin-bottom: 0.25rem;">
+                            <input type="radio" id="sortByAuthor" name="sortBy" value="author" style="margin-right: 0.5rem;">
+                            <label for="sortByAuthor" style="font-size: 0.85rem;">Author → Year → Title</label>
+                        </div>
+                        <div class="setting-item" style="margin-bottom: 0.25rem;">
+                            <input type="radio" id="sortByYear" name="sortBy" value="year" style="margin-right: 0.5rem;">
+                            <label for="sortByYear" style="font-size: 0.85rem;">Year → Author → Title</label>
+                        </div>
+                        <div class="setting-item" style="margin-bottom: 0.25rem;">
+                            <input type="radio" id="sortByTitle" name="sortBy" value="title" style="margin-right: 0.5rem;">
+                            <label for="sortByTitle" style="font-size: 0.85rem;">Title (alphabetical)</label>
+                        </div>
+                    </div>
                     <div>
                         <label for="fieldOrder" style="font-size: 0.8rem; color: #94a3b8;">Field order (space-separated):</label>
                         <input type="text" id="fieldOrder" class="field-order-input" 
@@ -636,26 +655,63 @@ pages={1-10}
         }
 
         function sortEntries(entries) {
+            const sortBy = document.querySelector('input[name="sortBy"]:checked')?.value || 'citation';
+            
             return entries.sort((a, b) => {
-                // Sort by author first, then by year, then by title
-                const authorA = (a.fields.author || a.key).toLowerCase();
-                const authorB = (b.fields.author || b.key).toLowerCase();
-                
-                if (authorA !== authorB) {
-                    return authorA.localeCompare(authorB);
+                switch(sortBy) {
+                    case 'citation':
+                        // Sort by citation key (grammatical/alphabetical order)
+                        return a.key.toLowerCase().localeCompare(b.key.toLowerCase());
+                    
+                    case 'author':
+                        // Sort by author first, then year, then title
+                        const authorA = (a.fields.author || a.key).toLowerCase();
+                        const authorB = (b.fields.author || b.key).toLowerCase();
+                        
+                        if (authorA !== authorB) {
+                            return authorA.localeCompare(authorB);
+                        }
+                        
+                        const yearA = parseInt(a.fields.year) || 0;
+                        const yearB = parseInt(b.fields.year) || 0;
+                        
+                        if (yearA !== yearB) {
+                            return yearB - yearA; // Newer first
+                        }
+                        
+                        const titleA = (a.fields.title || a.key).toLowerCase();
+                        const titleB = (b.fields.title || b.key).toLowerCase();
+                        
+                        return titleA.localeCompare(titleB);
+                    
+                    case 'year':
+                        // Sort by year (newest first), then author, then title
+                        const yearA2 = parseInt(a.fields.year) || 0;
+                        const yearB2 = parseInt(b.fields.year) || 0;
+                        
+                        if (yearA2 !== yearB2) {
+                            return yearB2 - yearA2;
+                        }
+                        
+                        const authorA2 = (a.fields.author || a.key).toLowerCase();
+                        const authorB2 = (b.fields.author || b.key).toLowerCase();
+                        
+                        if (authorA2 !== authorB2) {
+                            return authorA2.localeCompare(authorB2);
+                        }
+                        
+                        return a.key.toLowerCase().localeCompare(b.key.toLowerCase());
+                    
+                    case 'title':
+                        // Sort by title alphabetically
+                        const titleA3 = (a.fields.title || a.key).toLowerCase();
+                        const titleB3 = (b.fields.title || b.key).toLowerCase();
+                        
+                        return titleA3.localeCompare(titleB3);
+                    
+                    default:
+                        return a.key.toLowerCase().localeCompare(b.key.toLowerCase());
                 }
-                
-                const yearA = parseInt(a.fields.year) || 0;
-                const yearB = parseInt(b.fields.year) || 0;
-                
-                if (yearA !== yearB) {
-                    return yearB - yearA; // Newer first
-                }
-                
-                const titleA = (a.fields.title || a.key).toLowerCase();
-                const titleB = (b.fields.title || b.key).toLowerCase();
-                
-                return titleA.localeCompare(titleB);
             });
         }
 
