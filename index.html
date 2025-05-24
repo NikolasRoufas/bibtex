@@ -249,6 +249,35 @@
             margin-top: 0.5rem;
         }
 
+        .shortcuts {
+            position: fixed;
+            bottom: 1rem;
+            right: 1rem;
+            background: rgba(30, 41, 59, 0.9);
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.75rem;
+            color: #94a3b8;
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            backdrop-filter: blur(10px);
+        }
+
+        .shortcuts div {
+            margin-bottom: 0.25rem;
+        }
+
+        .shortcuts div:last-child {
+            margin-bottom: 0;
+        }
+
+        kbd {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 0.1rem 0.3rem;
+            border-radius: 3px;
+            font-size: 0.7rem;
+            border: 1px solid rgba(148, 163, 184, 0.2);
+        }
+
         @media (max-width: 768px) {
             .main-content {
                 grid-template-columns: 1fr;
@@ -260,6 +289,10 @@
             
             .title {
                 font-size: 2rem;
+            }
+
+            .shortcuts {
+                display: none;
             }
         }
     </style>
@@ -353,7 +386,7 @@
                         <input type="checkbox" id="sortFields" checked>
                         <label for="sortFields">Sort fields within entries</label>
                     </div>
-                    <div class="setting-group" style="margin-left: 1rem; margin-top: 0.5rem;">
+                    <div style="margin-left: 1rem; margin-top: 0.5rem;">
                         <label style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 0.5rem; display: block;">Sort entries by:</label>
                         <div class="setting-item" style="margin-bottom: 0.25rem;">
                             <input type="radio" id="sortByCitation" name="sortBy" value="citation" checked style="margin-right: 0.5rem;">
@@ -421,6 +454,7 @@ pages={1-10}
                     <button class="btn btn-primary" onclick="formatBibTeX()">🚀 Format & Organize</button>
                     <button class="btn btn-secondary" onclick="clearAll()">🗑️ Clear All</button>
                     <button class="btn btn-secondary" onclick="copyOutput()">📋 Copy Output</button>
+                    <button class="btn btn-secondary" onclick="loadSampleData()">📚 Load Sample</button>
                 </div>
 
                 <div class="textarea-container">
@@ -452,6 +486,12 @@ pages={1-10}
         </div>
     </div>
 
+    <div class="shortcuts">
+        <div><kbd>Ctrl+Enter</kbd> Format</div>
+        <div><kbd>Ctrl+K</kbd> Clear</div>
+        <div><kbd>Ctrl+Shift+C</kbd> Copy</div>
+    </div>
+
     <script>
         // Month abbreviations mapping
         const monthMap = {
@@ -478,88 +518,119 @@ pages={1-10}
 
         function parseBibTeX(input) {
             const entries = [];
-            const lines = input.split('\n');
             let currentEntry = null;
             let inEntry = false;
             let braceCount = 0;
             let currentField = '';
             let currentValue = '';
-            let inField = false;
-
-            for (let line of lines) {
-                line = line.trim();
+            
+            // Improved regex to handle various BibTeX formats
+            const entryRegex = /@(\w+)\s*\{\s*([^,\s}]+)\s*,?/;
+            const fieldRegex = /^(\w+)\s*=\s*(.+)$/;
+            
+            const lines = input.split('\n');
+            
+            for (let i = 0; i < lines.length; i++) {
+                let line = lines[i].trim();
                 
-                // Skip comments if not preserving them
+                // Skip comments if removing them
                 if (line.startsWith('%') && document.getElementById('removeComments').checked) {
                     continue;
                 }
-
-                // Start of entry
-                if (line.startsWith('@') && !inEntry) {
-                    const match = line.match(/@(\w+)\s*\{\s*([^,\s]+)\s*,?\s*$/);
-                    if (match) {
-                        currentEntry = {
-                            type: match[1],
-                            key: match[2],
-                            fields: {}
-                        };
-                        inEntry = true;
-                        braceCount = 1;
+                
+                // Start of new entry
+                const entryMatch = line.match(entryRegex);
+                if (entryMatch && !inEntry) {
+                    // Save previous entry if exists
+                    if (currentEntry && currentField && currentValue) {
+                        currentEntry.fields[currentField.toLowerCase()] = cleanFieldValue(currentValue);
+                    }
+                    
+                    currentEntry = {
+                        type: entryMatch[1].toLowerCase(),
+                        key: entryMatch[2],
+                        fields: {}
+                    };
+                    inEntry = true;
+                    braceCount = 1;
+                    currentField = '';
+                    currentValue = '';
+                    
+                    // Check if there's more content on the same line
+                    const restOfLine = line.substring(entryMatch[0].length).trim();
+                    if (restOfLine && restOfLine !== ',') {
+                        line = restOfLine;
+                    } else {
                         continue;
                     }
                 }
-
+                
                 if (inEntry) {
-                    // Count braces
+                    // Count braces to determine when entry ends
                     for (let char of line) {
                         if (char === '{') braceCount++;
                         if (char === '}') braceCount--;
                     }
-
+                    
                     // End of entry
                     if (braceCount === 0) {
+                        // Save last field
                         if (currentField && currentValue) {
-                            currentEntry.fields[currentField.toLowerCase()] = currentValue.trim();
+                            currentEntry.fields[currentField.toLowerCase()] = cleanFieldValue(currentValue);
                         }
+                        
                         entries.push(currentEntry);
                         currentEntry = null;
                         inEntry = false;
                         currentField = '';
                         currentValue = '';
-                        inField = false;
                         continue;
                     }
-
-                    // Parse field
-                    if (!inField) {
-                        const fieldMatch = line.match(/^(\w+)\s*=\s*(.+)$/);
-                        if (fieldMatch) {
-                            if (currentField && currentValue) {
-                                currentEntry.fields[currentField.toLowerCase()] = currentValue.trim();
-                            }
-                            currentField = fieldMatch[1];
-                            currentValue = fieldMatch[2];
-                            inField = true;
+                    
+                    // Remove trailing comma and closing brace for processing
+                    let processLine = line.replace(/[,}]\s*$/, '').trim();
+                    
+                    // Check for field
+                    const fieldMatch = processLine.match(fieldRegex);
+                    if (fieldMatch) {
+                        // Save previous field
+                        if (currentField && currentValue) {
+                            currentEntry.fields[currentField.toLowerCase()] = cleanFieldValue(currentValue);
                         }
-                    } else {
-                        currentValue += ' ' + line;
+                        
+                        currentField = fieldMatch[1];
+                        currentValue = fieldMatch[2];
+                    } else if (currentField) {
+                        // Continue previous field value
+                        currentValue += ' ' + processLine;
                     }
                 }
             }
-
+            
+            // Handle last entry if file doesn't end with }
+            if (currentEntry) {
+                if (currentField && currentValue) {
+                    currentEntry.fields[currentField.toLowerCase()] = cleanFieldValue(currentValue);
+                }
+                entries.push(currentEntry);
+            }
+            
             return entries;
         }
 
         function cleanFieldValue(value) {
-            // Remove outer braces and quotes
+            if (!value) return '';
+            
             value = value.trim();
+            
+            // Remove trailing commas
+            value = value.replace(/,\s*$/, '');
+            
+            // Remove outer braces or quotes, but preserve inner structure
             if ((value.startsWith('{') && value.endsWith('}')) || 
                 (value.startsWith('"') && value.endsWith('"'))) {
                 value = value.slice(1, -1);
             }
-            
-            // Remove trailing commas
-            value = value.replace(/,\s*$/, '');
             
             return value.trim();
         }
@@ -573,9 +644,16 @@ pages={1-10}
             }
 
             // Handle numeric fields
-            if (options.numericValues && ['year', 'volume', 'number', 'pages'].includes(field)) {
-                if (/^\d+(-\d+)?$/.test(value)) {
-                    return value;
+            if (options.numericValues && ['year', 'volume', 'number'].includes(field)) {
+                if (/^\d+$/.test(value)) {
+                    return value; // Return as numeric without braces
+                }
+            }
+
+            // Handle pages field
+            if (field === 'pages' && options.numericValues) {
+                if (/^\d+(-{1,2}\d+)?$/.test(value)) {
+                    return value; // Return page ranges without braces
                 }
             }
 
@@ -583,7 +661,13 @@ pages={1-10}
             if (field === 'month' && options.abbreviateMonths) {
                 const monthLower = value.toLowerCase();
                 if (monthMap[monthLower]) {
-                    return monthMap[monthLower];
+                    return monthMap[monthLower]; // Return month abbreviation without braces
+                }
+                // Check if it's already an abbreviation
+                const monthKeys = Object.keys(monthMap);
+                const monthValues = Object.values(monthMap);
+                if (monthValues.includes(monthLower)) {
+                    return monthLower; // Return as is without braces
                 }
             }
 
@@ -606,7 +690,6 @@ pages={1-10}
 
             for (let i = 0; i < entries.length; i++) {
                 const entry = entries[i];
-                let isDuplicate = false;
 
                 // Check citation key
                 if (options.checkKeys && seen.has(entry.key)) {
@@ -615,7 +698,6 @@ pages={1-10}
                         type: 'key',
                         value: entry.key
                     });
-                    isDuplicate = true;
                 }
                 seen.add(entry.key);
 
@@ -628,7 +710,6 @@ pages={1-10}
                             type: 'doi',
                             value: doi
                         });
-                        isDuplicate = true;
                     }
                     doiSeen.add(doi);
                 }
@@ -639,15 +720,15 @@ pages={1-10}
                     const words = title.split(/\s+/).filter(w => w.length > 3);
                     const titleKey = words.slice(0, 5).join(' ');
                     
-                    if (titleSeen.has(titleKey)) {
+                    if (titleKey && titleSeen.has(titleKey)) {
                         duplicates.push({
                             index: i,
                             type: 'title',
                             value: titleKey
                         });
-                        isDuplicate = true;
+                    } else if (titleKey) {
+                        titleSeen.set(titleKey, i);
                     }
-                    titleSeen.set(titleKey, i);
                 }
             }
 
@@ -657,14 +738,12 @@ pages={1-10}
         function sortEntries(entries) {
             const sortBy = document.querySelector('input[name="sortBy"]:checked')?.value || 'citation';
             
-            return entries.sort((a, b) => {
+            return [...entries].sort((a, b) => {
                 switch(sortBy) {
                     case 'citation':
-                        // Sort by citation key (grammatical/alphabetical order)
                         return a.key.toLowerCase().localeCompare(b.key.toLowerCase());
                     
                     case 'author':
-                        // Sort by author first, then year, then title
                         const authorA = (a.fields.author || a.key).toLowerCase();
                         const authorB = (b.fields.author || b.key).toLowerCase();
                         
@@ -676,7 +755,7 @@ pages={1-10}
                         const yearB = parseInt(b.fields.year) || 0;
                         
                         if (yearA !== yearB) {
-                            return yearB - yearA; // Newer first
+                            return yearB - yearA;
                         }
                         
                         const titleA = (a.fields.title || a.key).toLowerCase();
@@ -685,7 +764,6 @@ pages={1-10}
                         return titleA.localeCompare(titleB);
                     
                     case 'year':
-                        // Sort by year (newest first), then author, then title
                         const yearA2 = parseInt(a.fields.year) || 0;
                         const yearB2 = parseInt(b.fields.year) || 0;
                         
@@ -703,7 +781,6 @@ pages={1-10}
                         return a.key.toLowerCase().localeCompare(b.key.toLowerCase());
                     
                     case 'title':
-                        // Sort by title alphabetically
                         const titleA3 = (a.fields.title || a.key).toLowerCase();
                         const titleB3 = (b.fields.title || b.key).toLowerCase();
                         
@@ -720,24 +797,25 @@ pages={1-10}
             const sorted = {};
             
             // Add fields in specified order
-            for (let field of fieldOrder) {
-                if (fields[field.toLowerCase()]) {
-                    sorted[field.toLowerCase()] = fields[field.toLowerCase()];
+            for (const field of fieldOrder) {
+                const fieldLower = field.toLowerCase();
+                if (fields[fieldLower]) {
+                    sorted[fieldLower] = fields[fieldLower];
                 }
             }
             
-            // Add remaining fields
-            for (let field in fields) {
-                if (!sorted[field]) {
-                    sorted[field] = fields[field];
-                }
-            }
+            // Add remaining fields alphabetically
+            const remaining = Object.keys(fields).filter(field => !sorted[field]);
+            remaining.sort().forEach(field => {
+                sorted[field] = fields[field];
+            });
             
             return sorted;
         }
 
         function formatBibTeX() {
             const input = document.getElementById('inputBib').value.trim();
+            
             if (!input) {
                 showMessage('Please enter some BibTeX content to format.', 'error');
                 return;
@@ -775,114 +853,160 @@ pages={1-10}
                     return;
                 }
 
-                // Get custom field order
-                const fieldOrder = document.getElementById('fieldOrder').value
-                    .split(/\s+/)
-                    .filter(f => f.length > 0);
+                // Statistics
+                let stats = {
+                    totalEntries: entries.length,
+                    duplicatesFound: 0,
+                    fieldsCleared: 0,
+                    entriesSorted: options.sortEntries ? entries.length : 0
+                };
 
-                // Find duplicates
-                const duplicates = options.checkDuplicates ? findDuplicates(entries, options) : [];
-                
-                // Remove duplicates (keep first occurrence)
-                const duplicateIndices = new Set(duplicates.map(d => d.index));
-                entries = entries.filter((_, index) => !duplicateIndices.has(index));
+                // Check for duplicates
+                let duplicates = [];
+                if (options.checkDuplicates) {
+                    duplicates = findDuplicates(entries, options);
+                    stats.duplicatesFound = duplicates.length;
+                }
+
+                // Process entries
+                entries = entries.map(entry => {
+                    let processedFields = {};
+                    let fieldsCleared = 0;
+
+                    // Remove duplicate fields within entry
+                    if (options.removeDuplicateFields) {
+                        const seenFields = new Set();
+                        Object.keys(entry.fields).forEach(field => {
+                            const fieldLower = field.toLowerCase();
+                            if (!seenFields.has(fieldLower)) {
+                                seenFields.add(fieldLower);
+                                processedFields[fieldLower] = entry.fields[field];
+                            } else {
+                                fieldsCleared++;
+                            }
+                        });
+                    } else {
+                        processedFields = { ...entry.fields };
+                    }
+
+                    // Process each field
+                    Object.keys(processedFields).forEach(field => {
+                        const fieldName = options.lowercaseFields ? field.toLowerCase() : field;
+                        const formattedValue = formatFieldValue(fieldName, processedFields[field], options);
+                        
+                        if (formattedValue === null || formattedValue === '') {
+                            delete processedFields[field];
+                            fieldsCleared++;
+                        } else {
+                            processedFields[fieldName] = formattedValue;
+                            if (fieldName !== field) {
+                                delete processedFields[field];
+                            }
+                        }
+                    });
+
+                    stats.fieldsCleared += fieldsCleared;
+
+                    return {
+                        ...entry,
+                        fields: processedFields
+                    };
+                });
 
                 // Sort entries
                 if (options.sortEntries) {
                     entries = sortEntries(entries);
                 }
 
-                let fieldsCleared = 0;
-                const indent = options.useTabs ? '\t' : ' '.repeat(options.spaceCount);
+                // Get custom field order
+                const customFieldOrder = document.getElementById('fieldOrder').value
+                    .split(/\s+/)
+                    .filter(field => field.length > 0);
 
-                // Format entries
-                const formattedEntries = entries.map(entry => {
-                    let result = `@${entry.type}{${entry.key}`;
+                // Format output
+                const indent = options.useTabs ? '\t' : ' '.repeat(options.spaceCount);
+                let output = '';
+                let maxFieldLength = 0;
+
+                // Calculate max field length for alignment
+                if (options.alignValues) {
+                    entries.forEach(entry => {
+                        Object.keys(entry.fields).forEach(field => {
+                            maxFieldLength = Math.max(maxFieldLength, field.length);
+                        });
+                    });
+                }
+
+                entries.forEach((entry, index) => {
+                    // Entry header
+                    output += `@${entry.type}{${entry.key}`;
                     
-                    // Process fields
-                    let fields = { ...entry.fields };
-                    
-                    // Remove duplicate fields
-                    if (options.removeDuplicateFields) {
-                        const seen = new Set();
-                        const cleanFields = {};
-                        for (let [key, value] of Object.entries(fields)) {
-                            const lowerKey = key.toLowerCase();
-                            if (!seen.has(lowerKey)) {
-                                cleanFields[lowerKey] = value;
-                                seen.add(lowerKey);
-                            } else {
-                                fieldsCleared++;
-                            }
-                        }
-                        fields = cleanFields;
-                    }
-                    
-                    // Sort fields
+                    // Sort fields if requested
+                    let fields = entry.fields;
                     if (options.sortFields) {
-                        fields = sortFields(fields, fieldOrder);
+                        fields = sortFields(fields, customFieldOrder);
                     }
-                    
-                    // Format fields
-                    const fieldStrings = [];
-                    let maxFieldLength = 0;
-                    
-                    for (let [field, value] of Object.entries(fields)) {
-                        const fieldName = options.lowercaseFields ? field.toLowerCase() : field;
-                        const formattedValue = formatFieldValue(field, value, options);
+
+                    // Add fields
+                    Object.keys(fields).forEach(field => {
+                        const value = fields[field];
+                        output += ',\n';
                         
-                        if (formattedValue !== null) {
-                            if (options.alignValues) {
-                                maxFieldLength = Math.max(maxFieldLength, fieldName.length);
-                            }
-                            fieldStrings.push([fieldName, formattedValue]);
-                        } else {
-                            fieldsCleared++;
-                        }
-                    }
-                    
-                    // Add formatted fields
-                    fieldStrings.forEach(([field, value], index) => {
-                        result += ',\n';
                         if (options.alignValues) {
                             const padding = ' '.repeat(maxFieldLength - field.length);
-                            result += `${indent}${field}${padding} = ${value}`;
+                            output += `${indent}${field}${padding} = ${value}`;
                         } else {
-                            result += `${indent}${field} = ${value}`;
+                            output += `${indent}${field} = ${value}`;
                         }
                     });
+
+                    output += '\n}';
                     
-                    result += '\n}';
-                    return result;
+                    // Add blank line between entries
+                    if (options.blankLines && index < entries.length - 1) {
+                        output += '\n';
+                    }
+                    
+                    if (index < entries.length - 1) {
+                        output += '\n';
+                    }
                 });
 
-                // Join entries
-                const separator = options.blankLines ? '\n\n' : '\n';
-                const formatted = formattedEntries.join(separator);
-
                 // Update output
-                document.getElementById('outputBib').value = formatted;
+                document.getElementById('outputBib').value = output;
 
-                // Update stats
-                document.getElementById('totalEntries').textContent = entries.length;
-                document.getElementById('duplicatesFound').textContent = duplicates.length;
-                document.getElementById('fieldsCleared').textContent = fieldsCleared;
-                document.getElementById('entriesSorted').textContent = options.sortEntries ? entries.length : 0;
+                // Show statistics
+                document.getElementById('totalEntries').textContent = stats.totalEntries;
+                document.getElementById('duplicatesFound').textContent = stats.duplicatesFound;
+                document.getElementById('fieldsCleared').textContent = stats.fieldsCleared;
+                document.getElementById('entriesSorted').textContent = stats.entriesSorted;
                 document.getElementById('stats').style.display = 'grid';
 
                 // Show success message
-                let message = `Successfully formatted ${entries.length} entries`;
-                if (duplicates.length > 0) {
-                    message += ` (removed ${duplicates.length} duplicates)`;
+                let message = `Successfully formatted ${stats.totalEntries} entries.`;
+                if (stats.duplicatesFound > 0) {
+                    message += ` Found ${stats.duplicatesFound} potential duplicates.`;
                 }
-                if (fieldsCleared > 0) {
-                    message += ` (cleaned ${fieldsCleared} fields)`;
+                if (stats.fieldsCleared > 0) {
+                    message += ` Cleaned ${stats.fieldsCleared} fields.`;
                 }
+                
                 showMessage(message, 'success');
 
+                // Show duplicate details if any
+                if (duplicates.length > 0) {
+                    let duplicateDetails = 'Potential duplicates found:\n';
+                    duplicates.forEach(dup => {
+                        duplicateDetails += `• Entry ${dup.index + 1}: Duplicate ${dup.type} - "${dup.value}"\n`;
+                    });
+                    setTimeout(() => {
+                        showMessage(duplicateDetails, 'error');
+                    }, 5500);
+                }
+
             } catch (error) {
-                console.error('Error formatting BibTeX:', error);
-                showMessage(`Error formatting BibTeX: ${error.message}`, 'error');
+                showMessage(`Error processing BibTeX: ${error.message}`, 'error');
+                console.error('BibTeX processing error:', error);
             }
         }
 
@@ -901,108 +1025,63 @@ pages={1-10}
             }
             
             output.select();
-            document.execCommand('copy');
-            showMessage('Formatted BibTeX copied to clipboard!', 'success');
-        }
-
-        // Auto-resize textareas
-        function autoResize(textarea) {
-            textarea.style.height = 'auto';
-            textarea.style.height = Math.max(300, textarea.scrollHeight) + 'px';
-        }
-
-        // Add event listeners
-        document.addEventListener('DOMContentLoaded', function() {
-            const textareas = document.querySelectorAll('textarea');
-            textareas.forEach(textarea => {
-                textarea.addEventListener('input', function() {
-                    autoResize(this);
+            output.setSelectionRange(0, 99999);
+            
+            try {
+                document.execCommand('copy');
+                showMessage('Formatted BibTeX copied to clipboard!', 'success');
+            } catch (err) {
+                // Fallback for modern browsers
+                navigator.clipboard.writeText(output.value).then(() => {
+                    showMessage('Formatted BibTeX copied to clipboard!', 'success');
+                }).catch(() => {
+                    showMessage('Failed to copy to clipboard. Please select and copy manually.', 'error');
                 });
-            });
-
-            // Toggle space count input based on tabs checkbox
-            const useTabs = document.getElementById('useTabs');
-            const spaceCount = document.getElementById('spaceCount');
-            
-            function toggleSpaceInput() {
-                spaceCount.disabled = useTabs.checked;
-                spaceCount.style.opacity = useTabs.checked ? '0.5' : '1';
             }
-            
-            useTabs.addEventListener('change', toggleSpaceInput);
-            toggleSpaceInput();
-
-            // Add sample data button functionality
-            const sampleButton = document.createElement('button');
-            sampleButton.textContent = '📚 Load Sample Data';
-            sampleButton.className = 'btn btn-secondary';
-            sampleButton.onclick = loadSampleData;
-            
-            const buttonGroup = document.querySelector('.button-group');
-            buttonGroup.appendChild(sampleButton);
-        });
+        }
 
         function loadSampleData() {
-            const sampleBibTeX = `@article{doe2023machine,
-    title={Machine Learning Applications in Modern Data Science},
-    author={John Doe and Jane Smith and Robert Johnson},
-    journal={Journal of Advanced Computing},
-    volume={15},
+            const sampleBibTeX = `@article{smith2023machine,
+    title={Machine Learning Applications in Modern Computing},
+    author={John Smith and Jane Doe},
+    journal={Journal of Computer Science},
+    year={2023},
+    volume={45},
     number={3},
     pages={123-145},
-    year={2023},
-    month={March},
-    doi={10.1234/jac.2023.15.3.123},
-    url={https://example.com/paper1}
+    doi={10.1000/journal.2023.123},
+    url={https://example.com/paper}
 }
 
-@inproceedings{smith2022deep,
-    TITLE = {Deep Learning for Natural Language Processing: A Comprehensive Survey},
-    AUTHOR = {Jane Smith and Alice Brown},
-    BOOKTITLE = {Proceedings of the International Conference on Artificial Intelligence},
-    PAGES = {456--478},
-    YEAR = {2022},
-    PUBLISHER = {ACM Press},
-    ADDRESS = {New York, NY},
-    DOI = {10.1145/ai2022.456}
+@inproceedings{johnson2022deep,
+  title = {Deep Learning for Image Recognition: A Comprehensive Study},
+  author = {Alice Johnson and Bob Wilson},
+  booktitle = {Proceedings of the International Conference on Artificial Intelligence},
+  year = {2022},
+  pages = {67--89},
+  address = {New York, USA},
+  publisher = {ACM Press}
 }
 
-@book{johnson2021data,
-title={Data Structures and Algorithms: A Modern Approach},
-author={Robert Johnson},
+@book{brown2021algorithms,
+title={Algorithms and Data Structures},
+author={Charlie Brown},
 publisher={Tech Publications},
 year={2021},
-edition={3rd},
 isbn={978-0123456789},
 address={Boston, MA}
 }
 
-@article{doe2023machine,
-    title={Machine Learning Applications in Modern Data Science},
-    author={John Doe and Jane Smith and Robert Johnson},
-    journal={Journal of Advanced Computing},
-    volume={15},
-    number={3},
-    pages={123-145},
+@misc{davis2023web,
+    title={Modern Web Development Practices},
+    author={Emma Davis},
     year={2023},
-    month={March},
-    doi={10.1234/jac.2023.15.3.123},
-    url={https://example.com/paper1}
-}
-
-@misc{web2023guide,
-    title = {A Complete Guide to Web Development},
-    author = {Web Developer},
-    year = {2023},
-    howpublished = {\\url{https://webdev-guide.com}},
-    note = {Accessed: 2023-12-01},
-    url = {},
-    empty_field = {}
+    howpublished={\\url{https://webdev.example.com}},
+    note={Accessed: 2023-12-01}
 }`;
 
             document.getElementById('inputBib').value = sampleBibTeX;
-            autoResize(document.getElementById('inputBib'));
-            showMessage('Sample BibTeX data loaded! Click "Format & Organize" to see the results.', 'success');
+            showMessage('Sample BibTeX data loaded. Click "Format & Organize" to see the results!', 'success');
         }
 
         // Keyboard shortcuts
@@ -1017,7 +1096,7 @@ address={Boston, MA}
                         e.preventDefault();
                         clearAll();
                         break;
-                    case 'c':
+                    case 'C':
                         if (e.shiftKey) {
                             e.preventDefault();
                             copyOutput();
@@ -1027,115 +1106,13 @@ address={Boston, MA}
             }
         });
 
-        // Add keyboard shortcut hints
-        document.addEventListener('DOMContentLoaded', function() {
-            const shortcuts = document.createElement('div');
-            shortcuts.innerHTML = `
-                <div style="position: fixed; bottom: 1rem; right: 1rem; background: rgba(30, 41, 59, 0.9); padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.75rem; color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.2);">
-                    <div><kbd>Ctrl+Enter</kbd> Format</div>
-                    <div><kbd>Ctrl+K</kbd> Clear</div>
-                    <div><kbd>Ctrl+Shift+C</kbd> Copy</div>
-                </div>
-            `;
-            document.body.appendChild(shortcuts);
+        // Auto-disable space count when tabs are selected
+        document.getElementById('useTabs').addEventListener('change', function() {
+            document.getElementById('spaceCount').disabled = this.checked;
         });
 
-        // Advanced duplicate detection using Levenshtein distance
-        function levenshteinDistance(str1, str2) {
-            const matrix = [];
-            const n = str1.length;
-            const m = str2.length;
-
-            if (n === 0) return m;
-            if (m === 0) return n;
-
-            for (let i = 0; i <= n; i++) {
-                matrix[i] = [i];
-            }
-
-            for (let j = 0; j <= m; j++) {
-                matrix[0][j] = j;
-            }
-
-            for (let i = 1; i <= n; i++) {
-                for (let j = 1; j <= m; j++) {
-                    if (str1.charAt(i - 1) === str2.charAt(j - 1)) {
-                        matrix[i][j] = matrix[i - 1][j - 1];
-                    } else {
-                        matrix[i][j] = Math.min(
-                            matrix[i - 1][j - 1] + 1,
-                            matrix[i][j - 1] + 1,
-                            matrix[i - 1][j] + 1
-                        );
-                    }
-                }
-            }
-
-            return matrix[n][m];
-        }
-
-        function similarity(str1, str2) {
-            const longer = str1.length > str2.length ? str1 : str2;
-            const shorter = str1.length > str2.length ? str2 : str1;
-            
-            if (longer.length === 0) return 1.0;
-            
-            const distance = levenshteinDistance(longer, shorter);
-            return (longer.length - distance) / longer.length;
-        }
-
-        // Enhanced duplicate detection
-        function findAdvancedDuplicates(entries, options) {
-            const duplicates = [];
-            const processed = new Set();
-
-            for (let i = 0; i < entries.length - 1; i++) {
-                if (processed.has(i)) continue;
-
-                for (let j = i + 1; j < entries.length; j++) {
-                    if (processed.has(j)) continue;
-
-                    const entry1 = entries[i];
-                    const entry2 = entries[j];
-                    
-                    // Check title similarity
-                    if (options.checkTitles && entry1.fields.title && entry2.fields.title) {
-                        const title1 = cleanFieldValue(entry1.fields.title).toLowerCase();
-                        const title2 = cleanFieldValue(entry2.fields.title).toLowerCase();
-                        
-                        if (similarity(title1, title2) > 0.85) {
-                            duplicates.push({
-                                index: j,
-                                type: 'similar_title',
-                                similarity: similarity(title1, title2),
-                                compared_to: i
-                            });
-                            processed.add(j);
-                        }
-                    }
-                    
-                    // Check author similarity
-                    if (entry1.fields.author && entry2.fields.author) {
-                        const author1 = cleanFieldValue(entry1.fields.author).toLowerCase();
-                        const author2 = cleanFieldValue(entry2.fields.author).toLowerCase();
-                        
-                        if (similarity(author1, author2) > 0.9) {
-                            const year1 = entry1.fields.year;
-                            const year2 = entry2.fields.year;
-                            
-                            if (year1 === year2) {
-                                duplicates.push({
-                                    index: j,
-                                    type: 'similar_author_year',
-                                    similarity: similarity(author1, author2),
-                                    compared_to: i
-                                });
-                                processed.add(j);
-                            }
-                        }
-                    }
-                }
-            }
-
-            return duplicates.concat(findDuplicates(entries, options));
-        }
+        // Initialize
+        document.getElementById('spaceCount').disabled = document.getElementById('useTabs').checked;
+    </script>
+</body>
+</html>
